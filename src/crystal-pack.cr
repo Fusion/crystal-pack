@@ -42,5 +42,4 @@ require "./crystal-pack/*"
 # "\x01\x00\x02\x00".unpack("S>*") #=> [256, 512]
 
 module Crystal::Pack
-  puts "Pack".unpack("C CC")
 end

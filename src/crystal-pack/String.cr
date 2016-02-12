@@ -1,28 +1,75 @@
 class String
 
-  Formats = "Cc"
+  Formats = "CcIiSsLlQqPp"
   Repeaters = "0123456789*"
 
   enum FormatActions
     NOOP
     DONE
     AS_CHAR
+    AS_SHORT
+    AS_INTEGER
+    AS_LONG
+    AS_LONG_LONG
+    AS_PTR_SIZE
   end
 
-  record NextFormat, format_action, format_str_remainder
+  alias ScopeNumber = Int64
+  alias InArrayType = Int64 | Int32 | Int16 | Int8 | UInt64 | UInt32 | UInt16 | UInt8
+
+  struct NextFormat
+    getter acc, format_action, format_repeat, format_size, format_str_remainder
+
+    def initialize(@format_action, @format_repeat, @format_size, @format_str_remainder)
+      @size_ctr = @format_size
+      @acc      = ScopeNumber.new 0
+    end
+
+    def read_to_full_size?(next_byte)
+      @acc +=(ScopeNumber.new(next_byte) << 8 * (@size_ctr - 1))
+      @size_ctr -= 1
+      if @size_ctr < 1
+        @size_ctr = @format_size
+        true
+      else
+        false
+      end
+    end
+
+    def step?
+      return true if @format_repeat == -1
+      @format_repeat -= 1
+      @format_repeat < 1 ? false : true
+    end
+  end
 
   private def next_format(format_str)
 
-    return NextFormat.new FormatActions::DONE, "" if format_str.size == 0
+    return NextFormat.new FormatActions::DONE, 0, 0, "" if format_str.size == 0
 
     action = FormatActions::NOOP
     repeat = 0
+    size   = 1
 
     format_char = format_str.head
     if Formats.includes?(format_char)
       case format_char
       when 'C'
         action = FormatActions::AS_CHAR
+      when 'S'
+        action = FormatActions::AS_SHORT
+        size = 1
+      when 'I'
+        action = FormatActions::AS_INTEGER
+        size = 2
+      when 'L'
+        action = FormatActions::AS_LONG
+        size = 4
+      when 'Q'
+        action = FormatActions::AS_LONG_LONG
+        size = 8
+      when 'J'
+        action = FormatActions::AS_PTR_SIZE
       end
       repeat_char = format_str.tail.head
       if repeat_char != ""
@@ -31,10 +78,14 @@ class String
           format_str = format_str.tail
         end
       end
-      NextFormat.new action, format_str.tail
+      NextFormat.new action, repeat, size, format_str.tail
     else
       next_format format_str.tail
     end
+  end
+
+  def expand_type(value)
+    ScopeNumber.new value
   end
 
   def head
@@ -46,7 +97,7 @@ class String
   end
 
   def unpack(format_str)
-    unpacked = [] of UInt8
+    unpacked = [] of InArrayType
 
     format_idx = 0
 
@@ -54,13 +105,23 @@ class String
 
     bytesize.times do |source_idx|
       break if nextf.format_action == FormatActions::DONE
-      
+
       format_str = nextf.format_str_remainder
       case nextf.format_action
       when FormatActions::AS_CHAR
-        unpacked << byte_at(source_idx)
+        unpacked << expand_type byte_at source_idx
         format_idx += 1
-        nextf = next_format format_str
+        nextf = next_format format_str if !nextf.step?
+      when FormatActions::AS_SHORT
+        unpacked << expand_type byte_at source_idx
+        format_idx += 1
+        nextf = next_format format_str if !nextf.step?
+      when FormatActions::AS_INTEGER, FormatActions::AS_LONG, FormatActions::AS_LONG_LONG
+        if nextf.read_to_full_size? byte_at source_idx
+          unpacked << nextf.acc
+          format_idx += 1
+          nextf = next_format format_str if !nextf.step?
+        end
       else
       end
     end
