@@ -1,0 +1,2 @@
+struct Int
+end
