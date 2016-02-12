@@ -43,6 +43,54 @@ class String
     end
   end
 
+  enum SpecialChars
+    UNDEF
+    ESCAPED
+    HEX
+  end
+
+  class NextChar
+    def initialize(car)
+      case car
+      when 0x78
+        @type     = SpecialChars::ESCAPED
+      else
+        @type     = SpecialChars::UNDEF
+      end
+      @cars = [] of Int8 | UInt8
+    end
+
+    def <<(car)
+      puts car
+      case @type
+      when SpecialChars::ESCAPED
+        @type = SpecialChars::HEX if car == 0x78 # 'x'
+        puts "NOO" if @type == SpecialChars::HEX
+      end
+      @cars << car
+    end
+
+    def ready?
+      case @type
+      when SpecialChars::UNDEF, SpecialChars::ESCAPED
+        false
+      when SpecialChars::HEX
+        @cars.size == 3
+      end
+    end
+
+    def encoded
+      case @type
+      when SpecialChars::HEX
+        @cars[1] << 8 + @cars[2]
+      end
+    end
+  end
+
+  def pack_inner_encode?(car)
+    0x78 == car # backslash
+  end
+
   private def next_format(format_str)
 
     return NextFormat.new FormatActions::DONE, 0, 0, "" if format_str.size == 0
@@ -100,24 +148,42 @@ class String
     unpacked = [] of InArrayType
 
     format_idx = 0
+    next_char = nil
 
     nextf = next_format format_str
 
     bytesize.times do |source_idx|
       break if nextf.format_action == FormatActions::DONE
 
+      cur_byte = byte_at source_idx
+
+      if next_char != nil
+        next_char.not_nil! << cur_byte
+        if next_char.not_nil!.ready?
+          puts "READY"
+          puts next_char.not_nil!.encoded
+        else
+          next
+        end
+      else
+        if pack_inner_encode? cur_byte
+          next_char = NextChar.new cur_byte.chr
+          next
+        end
+      end
+
       format_str = nextf.format_str_remainder
       case nextf.format_action
       when FormatActions::AS_CHAR
-        unpacked << expand_type byte_at source_idx
+        unpacked << expand_type cur_byte
         format_idx += 1
         nextf = next_format format_str if !nextf.step?
       when FormatActions::AS_SHORT
-        unpacked << expand_type byte_at source_idx
+        unpacked << expand_type cur_byte
         format_idx += 1
         nextf = next_format format_str if !nextf.step?
       when FormatActions::AS_INTEGER, FormatActions::AS_LONG, FormatActions::AS_LONG_LONG
-        if nextf.read_to_full_size? byte_at source_idx
+        if nextf.read_to_full_size? cur_byte
           unpacked << nextf.acc
           format_idx += 1
           nextf = next_format format_str if !nextf.step?
