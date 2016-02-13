@@ -46,4 +46,5 @@ require "./crystal-pack/*"
 #
 
 module Crystal::Pack
+
 end
