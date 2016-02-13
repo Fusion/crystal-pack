@@ -40,6 +40,10 @@ require "./crystal-pack/*"
 #
 # "\x01\x00\x02\x00".unpack("S<*") #=> [1, 2]
 # "\x01\x00\x02\x00".unpack("S>*") #=> [256, 512]
+# In fact, in Crystal, this is:
+# "\u{01}\u{00}\u{02}\u{00}".unpack("S<*") #=> [1, 2]
+# "\u{01}\u{00}\u{02}\u{00}".unpack("S>*") #=> [256, 512]
+#
 
 module Crystal::Pack
 end

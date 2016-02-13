@@ -2,6 +2,7 @@ class String
 
   Formats = "CcIiSsLlQqPp"
   Repeaters = "0123456789*"
+  Endianness = "><"
 
   enum FormatActions
     NOOP
@@ -14,19 +15,28 @@ class String
     AS_PTR_SIZE
   end
 
+  enum Arch
+    BIG_ENDIAN
+    LITTLE_ENDIAN
+  end
+
   alias ScopeNumber = Int64
   alias InArrayType = Int64 | Int32 | Int16 | Int8 | UInt64 | UInt32 | UInt16 | UInt8
 
   struct NextFormat
-    getter acc, format_action, format_repeat, format_size, format_str_remainder
+    getter format_action, format_repeat, format_size, format_arch, format_str_remainder
 
-    def initialize(@format_action, @format_repeat, @format_size, @format_str_remainder)
+    def initialize(@format_action, @format_repeat, @format_size, @format_arch, @format_str_remainder)
       @size_ctr = @format_size
       @acc      = ScopeNumber.new 0
     end
 
     def read_to_full_size?(next_byte)
-      @acc +=(ScopeNumber.new(next_byte) << 8 * (@size_ctr - 1))
+      if @format_arch == Arch::BIG_ENDIAN
+        @acc +=(ScopeNumber.new(next_byte) << 8 * (@size_ctr - 1))
+      else
+        @acc +=(ScopeNumber.new(next_byte) << 8 * (@format_size - @size_ctr))
+      end
       @size_ctr -= 1
       if @size_ctr < 1
         @size_ctr = @format_size
@@ -41,6 +51,12 @@ class String
       @format_repeat -= 1
       @format_repeat < 1 ? false : true
     end
+
+    def get_and_reset_acc!
+      ret = @acc
+      @acc = ScopeNumber.new 0
+      ret
+    end
   end
 
   enum SpecialChars
@@ -49,55 +65,14 @@ class String
     HEX
   end
 
-  class NextChar
-    def initialize(car)
-      case car
-      when 0x78
-        @type     = SpecialChars::ESCAPED
-      else
-        @type     = SpecialChars::UNDEF
-      end
-      @cars = [] of Int8 | UInt8
-    end
-
-    def <<(car)
-      puts car
-      case @type
-      when SpecialChars::ESCAPED
-        @type = SpecialChars::HEX if car == 0x78 # 'x'
-        puts "NOO" if @type == SpecialChars::HEX
-      end
-      @cars << car
-    end
-
-    def ready?
-      case @type
-      when SpecialChars::UNDEF, SpecialChars::ESCAPED
-        false
-      when SpecialChars::HEX
-        @cars.size == 3
-      end
-    end
-
-    def encoded
-      case @type
-      when SpecialChars::HEX
-        @cars[1] << 8 + @cars[2]
-      end
-    end
-  end
-
-  def pack_inner_encode?(car)
-    0x78 == car # backslash
-  end
-
   private def next_format(format_str)
 
-    return NextFormat.new FormatActions::DONE, 0, 0, "" if format_str.size == 0
+    return NextFormat.new FormatActions::DONE, 0, 0, Arch::BIG_ENDIAN, "" if format_str.size == 0
 
     action = FormatActions::NOOP
     repeat = 0
     size   = 1
+    arch   = Arch::BIG_ENDIAN
 
     format_char = format_str.head
     if Formats.includes?(format_char)
@@ -106,10 +81,10 @@ class String
         action = FormatActions::AS_CHAR
       when 'S'
         action = FormatActions::AS_SHORT
-        size = 1
+        size = 2
       when 'I'
         action = FormatActions::AS_INTEGER
-        size = 2
+        size = 4
       when 'L'
         action = FormatActions::AS_LONG
         size = 4
@@ -121,12 +96,22 @@ class String
       end
       repeat_char = format_str.tail.head
       if repeat_char != ""
+        if Endianness.includes?(repeat_char)
+          case repeat_char
+          when '>'
+            arch = Arch::BIG_ENDIAN
+          when '<'
+            arch = Arch::LITTLE_ENDIAN
+          end
+          format_str = format_str.tail
+          repeat_char = format_str.tail.head
+        end
         if Repeaters.includes?(repeat_char)
           repeat = repeat_char == '*' ? -1 : repeat_char.to_i
           format_str = format_str.tail
         end
       end
-      NextFormat.new action, repeat, size, format_str.tail
+      NextFormat.new action, repeat, size, arch, format_str.tail
     else
       next_format format_str.tail
     end
@@ -157,34 +142,15 @@ class String
 
       cur_byte = byte_at source_idx
 
-      if next_char != nil
-        next_char.not_nil! << cur_byte
-        if next_char.not_nil!.ready?
-          puts "READY"
-          puts next_char.not_nil!.encoded
-        else
-          next
-        end
-      else
-        if pack_inner_encode? cur_byte
-          next_char = NextChar.new cur_byte.chr
-          next
-        end
-      end
-
       format_str = nextf.format_str_remainder
       case nextf.format_action
       when FormatActions::AS_CHAR
         unpacked << expand_type cur_byte
         format_idx += 1
         nextf = next_format format_str if !nextf.step?
-      when FormatActions::AS_SHORT
-        unpacked << expand_type cur_byte
-        format_idx += 1
-        nextf = next_format format_str if !nextf.step?
-      when FormatActions::AS_INTEGER, FormatActions::AS_LONG, FormatActions::AS_LONG_LONG
+      when FormatActions::AS_SHORT, FormatActions::AS_INTEGER, FormatActions::AS_LONG, FormatActions::AS_LONG_LONG
         if nextf.read_to_full_size? cur_byte
-          unpacked << nextf.acc
+          unpacked << nextf.get_and_reset_acc!
           format_idx += 1
           nextf = next_format format_str if !nextf.step?
         end
