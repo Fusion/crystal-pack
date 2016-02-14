@@ -68,6 +68,18 @@ class Array(T)
       when 'J', 'j'
         action = FormatActions::AS_PTR_SIZE; sign = get_sign format_char
         size = sizeof(Pointer)
+      when 'n'
+        action = FormatActions::AS_SHORT; sign = Sign::UNSIGNED
+        size = 2; arch = Arch::BIG_ENDIAN
+      when 'N'
+        action = FormatActions::AS_INTEGER; sign = Sign::SIGNED
+        size = 4; arch = Arch::BIG_ENDIAN
+      when 'v'
+        action = FormatActions::AS_SHORT; sign = Sign::UNSIGNED
+        size = 2; arch = Arch::LITTLE_ENDIAN
+      when 'V'
+        action = FormatActions::AS_INTEGER; sign = Sign::SIGNED
+        size = 4; arch = Arch::LITTLE_ENDIAN
       end
       repeat_char = format_str.tail.head
       if repeat_char != ""
