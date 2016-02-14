@@ -1,3 +1,5 @@
+require "./PackUnpackDefs.cr"
+
 class Array(T)
   include PackUnpackDefs
 
@@ -7,6 +9,10 @@ class Array(T)
     def initialize(@format_action, @format_repeat, @format_size, @format_arch, @format_sign, @format_str_remainder)
     end
 
+    def self.new
+      new(FormatActions::DONE, 0, 0, Arch::LITTLE_ENDIAN, Sign::UNSIGNED, "")
+    end
+
     def read_to_full_size(next_value)
       res_arr  = [] of Char
       size_ctr = @format_size
@@ -14,7 +20,7 @@ class Array(T)
         divider = 1 << (8 * (size_ctr - 1))
         value = Int8.new (next_value / divider)
         next_value %= divider
-        if @format_arch == Arch::BIG_ENDIAN
+        if @format_arch == Arch::LITTLE_ENDIAN
           res_arr << value.chr
         else
           res_arr.unshift value.chr
@@ -34,13 +40,13 @@ class Array(T)
 
   private def next_format(format_str)
 
-    return NextFormat.new FormatActions::DONE, 0, 0, Arch::BIG_ENDIAN, Sign::UNSIGNED, "" if format_str.size == 0
+    return NextFormat.new if format_str.size == 0
 
     action = FormatActions::NOOP
     repeat = 0
     size   = 1
     sign   = Sign::UNSIGNED
-    arch   = Arch::BIG_ENDIAN
+    arch   = Arch::LITTLE_ENDIAN
 
     format_char = format_str.head as Char
     if Formats.includes?(format_char)
@@ -61,6 +67,7 @@ class Array(T)
         size = 8
       when 'J', 'j'
         action = FormatActions::AS_PTR_SIZE; sign = get_sign format_char
+        size = sizeof(Pointer)
       end
       repeat_char = format_str.tail.head
       if repeat_char != ""

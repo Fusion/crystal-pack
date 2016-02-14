@@ -1,3 +1,5 @@
+require "./PackUnpackDefs.cr"
+
 class String
   include PackUnpackDefs
 
@@ -6,14 +8,18 @@ class String
 
     def initialize(@format_action, @format_repeat, @format_size, @format_arch, @format_sign, @format_str_remainder)
       @size_ctr = @format_size
-      @acc      = ScopeNumber.new 0
+      @acc      = expand_type 0
+    end
+
+    def self.new
+      new(FormatActions::DONE, 0, 0, Arch::LITTLE_ENDIAN, Sign::UNSIGNED, "")
     end
 
     def read_to_full_size?(next_byte)
       if @format_arch == Arch::BIG_ENDIAN
-        @acc +=(ScopeNumber.new(next_byte) << 8 * (@size_ctr - 1))
+        @acc += (expand_type(next_byte) << 8 * (@size_ctr - 1))
       else
-        @acc +=(ScopeNumber.new(next_byte) << 8 * (@format_size - @size_ctr))
+        @acc += (expand_type(next_byte) << 8 * (@format_size - @size_ctr))
       end
       @size_ctr -= 1
       if @size_ctr < 1
@@ -30,9 +36,9 @@ class String
       @format_repeat < 1 ? false : true
     end
 
-    def get_and_reset_acc!
+    def get_and_reset_acc! : InArrayType
       ret = @acc
-      @acc = ScopeNumber.new 0
+      @acc = expand_type 0
       ret
     end
 
@@ -60,13 +66,13 @@ class String
 
   private def next_format(format_str)
 
-    return NextFormat.new FormatActions::DONE, 0, 0, Arch::BIG_ENDIAN, Sign::UNSIGNED, "" if format_str.size == 0
+    return NextFormat.new if format_str.size == 0
 
     action = FormatActions::NOOP
     repeat = 0
     size   = 1
     sign   = Sign::UNSIGNED
-    arch   = Arch::BIG_ENDIAN
+    arch   = Arch::LITTLE_ENDIAN
 
     format_char = format_str.head as Char
     if Formats.includes?(format_char)
@@ -87,6 +93,7 @@ class String
         size = 8
       when 'J', 'j'
         action = FormatActions::AS_PTR_SIZE; sign = get_sign format_char
+        size = sizeof(Pointer)
       end
       repeat_char = format_str.tail.head
       if repeat_char != ""
