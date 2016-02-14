@@ -46,5 +46,8 @@ require "./crystal-pack/*"
 #
 
 module Crystal::Pack
-
+  puts [73, 100, 105, 111, 115, 121, 110, 99, 114, 195, 164, 116, 105, 99].pack("C*")
+  puts [73, 100, 105, 111, 115, 121, 110, 99, 114, -61, -92, 116, 105, 99].pack("C*")
+  puts "Idiosyncrätic".unpack("C*")
+  puts "Idiosyncrätic".unpack("c*")
 end

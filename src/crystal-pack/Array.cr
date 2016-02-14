@@ -2,9 +2,9 @@ class Array(T)
   include PackUnpackDefs
 
   struct NextFormat
-    getter format_action, format_repeat, format_size, format_arch, format_str_remainder
+    getter format_action, format_repeat, format_size, format_arch, format_sign, format_str_remainder
 
-    def initialize(@format_action, @format_repeat, @format_size, @format_arch, @format_str_remainder)
+    def initialize(@format_action, @format_repeat, @format_size, @format_arch, @format_sign, @format_str_remainder)
     end
 
     def read_to_full_size(next_value)
@@ -34,32 +34,33 @@ class Array(T)
 
   private def next_format(format_str)
 
-    return NextFormat.new FormatActions::DONE, 0, 0, Arch::BIG_ENDIAN, "" if format_str.size == 0
+    return NextFormat.new FormatActions::DONE, 0, 0, Arch::BIG_ENDIAN, Sign::UNSIGNED, "" if format_str.size == 0
 
     action = FormatActions::NOOP
     repeat = 0
     size   = 1
+    sign   = Sign::UNSIGNED
     arch   = Arch::BIG_ENDIAN
 
-    format_char = format_str.head
+    format_char = format_str.head as Char
     if Formats.includes?(format_char)
       case format_char
-      when 'C'
-        action = FormatActions::AS_CHAR
-      when 'S'
-        action = FormatActions::AS_SHORT
+      when 'C', 'c'
+        action = FormatActions::AS_CHAR; sign = get_sign format_char
+      when 'S', 's'
+        action = FormatActions::AS_SHORT; sign = get_sign format_char
         size = 2
-      when 'I'
-        action = FormatActions::AS_INTEGER
+      when 'I', 'i'
+        action = FormatActions::AS_INTEGER; sign = get_sign format_char
         size = 4
-      when 'L'
-        action = FormatActions::AS_LONG
+      when 'L', 'l'
+        action = FormatActions::AS_LONG; sign = get_sign format_char
         size = 4
-      when 'Q'
-        action = FormatActions::AS_LONG_LONG
+      when 'Q', 'q'
+        action = FormatActions::AS_LONG_LONG; sign = get_sign format_char
         size = 8
-      when 'J'
-        action = FormatActions::AS_PTR_SIZE
+      when 'J', 'j'
+        action = FormatActions::AS_PTR_SIZE; sign = get_sign format_char
       end
       repeat_char = format_str.tail.head
       if repeat_char != ""
@@ -78,7 +79,7 @@ class Array(T)
           format_str = format_str.tail
         end
       end
-      NextFormat.new action, repeat, size, arch, format_str.tail
+      NextFormat.new action, repeat, size, arch, sign, format_str.tail
     else
       next_format format_str.tail
     end
